@@ -1512,16 +1512,6 @@ class Http2UpgradeHandler extends AbstractStream implements InternalHttpUpgradeH
             // frame in which case this is the first time it is counted as
             // active.
             stream.incrementActiveRemoteStreamCount();
-            if (localSettings.getMaxConcurrentStreams() < activeRemoteStreamCount.get()) {
-                decrementActiveRemoteStreamCount(stream);
-                // Ignoring maxConcurrentStreams increases the overhead count
-                increaseOverheadCount();
-                throw new StreamException(sm.getString("upgradeHandler.tooManyRemoteStreams",
-                        Long.toString(localSettings.getMaxConcurrentStreams())),
-                        Http2Error.REFUSED_STREAM, streamId);
-            }
-            // Valid new stream reduces the overhead count
-            reduceOverheadCount();
             return stream;
         } else {
             if (log.isDebugEnabled()) {
@@ -1589,12 +1579,24 @@ class Http2UpgradeHandler extends AbstractStream implements InternalHttpUpgradeH
 
 
     @Override
-    public void headersEnd(int streamId) throws ConnectionException {
+    public void headersEnd(int streamId) throws Http2Exception {
         Stream stream = getStream(streamId, connectionState.get().isNewStreamAllowed());
         if (stream != null) {
             setMaxProcessedStream(streamId);
             if (stream.isActive()) {
                 if (stream.receivedEndOfHeaders()) {
+
+                    if (localSettings.getMaxConcurrentStreams() < activeRemoteStreamCount.get()) {
+                        decrementActiveRemoteStreamCount(stream);
+                        // Ignoring maxConcurrentStreams increases the overhead count
+                        increaseOverheadCount();
+                        throw new StreamException(sm.getString("upgradeHandler.tooManyRemoteStreams",
+                                Long.toString(localSettings.getMaxConcurrentStreams())),
+                                Http2Error.REFUSED_STREAM, streamId);
+                    }
+                    // Valid new stream reduces the overhead count
+                    reduceOverheadCount();
+
                     processStreamOnContainerThread(stream);
                 }
             }
